@@ -1137,6 +1137,33 @@ class DeviceConfig:
             # Set device with device type
             self.device = torch.device(self.device_type)
 
+class ContrastiveDecodingConfig:
+    """Configuration for contrastive decoding.
+    """
+
+    @staticmethod
+    def maybe_create_cd_config(
+        cd_positive_model: Optional[str],
+        cd_negative_model: Optional[str],
+        cd_decoding_alpha: Optional[float],
+    ) -> Optional["ContrastiveDecodingConfig"]:
+        if cd_positive_model is None and cd_negative_model is None:
+            return None
+
+        return ContrastiveDecodingConfig(
+            cd_positive_model,
+            cd_negative_model,
+            cd_decoding_alpha,
+        )
+    
+    def __init__(self,
+                 cd_positive_model: str,
+                 cd_negative_model: str,
+                 cd_decoding_alpha: float,
+                 ) -> None:
+        self.cd_positive_model = cd_positive_model
+        self.cd_negative_model = cd_negative_model
+        self.cd_decoding_alpha = cd_decoding_alpha
 
 class SpeculativeConfig:
     """Configuration for speculative decoding.
@@ -1911,6 +1938,7 @@ class EngineConfig:
     lora_config: Optional[LoRAConfig]
     speculative_config: Optional[SpeculativeConfig]
     decoding_config: Optional[DecodingConfig]
+    contrastive_decoding_config: Optional[ContrastiveDecodingConfig]
     observability_config: Optional[ObservabilityConfig]
     prompt_adapter_config: Optional[PromptAdapterConfig]
 

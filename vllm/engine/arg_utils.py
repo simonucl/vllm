@@ -12,7 +12,8 @@ from vllm.config import (CacheConfig, ConfigFormat, DecodingConfig,
                          DeviceConfig, EngineConfig, LoadConfig, LoadFormat,
                          LoRAConfig, ModelConfig, ObservabilityConfig,
                          ParallelConfig, PromptAdapterConfig, SchedulerConfig,
-                         SpeculativeConfig, TaskOption, TokenizerPoolConfig)
+                         SpeculativeConfig, TaskOption, TokenizerPoolConfig,
+                         ContrastiveDecodingConfig)
 from vllm.executor.executor_base import ExecutorBase
 from vllm.logger import init_logger
 from vllm.model_executor.layers.quantization import QUANTIZATION_METHODS
@@ -174,6 +175,11 @@ class EngineArgs:
     qlora_adapter_name_or_path: Optional[str] = None
     disable_logprobs_during_spec_decoding: Optional[bool] = None
 
+    # WIT: Contrastive Decoding configuration.
+    cd_positive_model: Optional[str] = None
+    cd_negative_model: Optional[str] = None
+    cd_decoding_alpha: Optional[float] = None
+    
     otlp_traces_endpoint: Optional[str] = None
     collect_detailed_traces: Optional[str] = None
     disable_async_output_proc: bool = False
@@ -757,6 +763,20 @@ class EngineArgs:
             'calculation in proposal sampling, target sampling, and after '
             'accepted tokens are determined.')
 
+        # Contrastive Decoding arguments
+        parser.add_argument('--cd-positive-model',
+                            type=str,
+                            default=None,
+                            help='Name or path of the positive model for contrastive decoding.')
+        parser.add_argument('--cd-negative-model',
+                            type=str,
+                            default=None,
+                            help='Name or path of the negative model for contrastive decoding.')
+        parser.add_argument('--cd-decoding-alpha',
+                            type=float,
+                            default=None,
+                            help='Alpha parameter for contrastive decoding.')
+        
         parser.add_argument('--model-loader-extra-config',
                             type=nullable_str,
                             default=EngineArgs.model_loader_extra_config,
@@ -1012,6 +1032,11 @@ class EngineArgs:
             disable_logprobs=self.disable_logprobs_during_spec_decoding,
         )
 
+        contrastive_decoding_config = ContrastiveDecodingConfig.maybe_create_cd_config(
+            cd_positive_model=self.cd_positive_model,
+            cd_negative_model=self.cd_negative_model,
+            cd_decoding_alpha=self.cd_decoding_alpha,
+        )
         # Reminder: Please update docs/source/serving/compatibility_matrix.rst
         # If the feature combo become valid
         if self.num_scheduler_steps > 1:
@@ -1109,6 +1134,7 @@ class EngineArgs:
             speculative_config=speculative_config,
             load_config=load_config,
             decoding_config=decoding_config,
+            contrastive_decoding_config=contrastive_decoding_config,
             observability_config=observability_config,
             prompt_adapter_config=prompt_adapter_config,
         )
