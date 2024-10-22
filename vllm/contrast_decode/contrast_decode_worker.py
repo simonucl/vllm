@@ -146,11 +146,46 @@ class ContrastiveDecodeWorker(LoraNotSupportedWorkerBase):
             self.negative_worker.load_model()
 
         # self._metrics.init_gpu_tensors(self.rank)
-        self.decode_sampler.init_gpu_tensors(self.rank)
+        # self.decode_sampler.init_gpu_tensors(self.rank)
 
     def load_model(self, *args, **kwargs):
         pass
 
+    def get_cache_block_size_bytes(self) -> int:
+        pass
+
+    def determine_num_available_blocks(self) -> Tuple[int, int]:
+        """Determine the number of cache blocks to use.
+
+        This is done by profiling the base model (which is typically the
+        larger of the two). Then the total memory which would be used by the
+        base model KV is divided evenly between the positive and negative model KV,
+        such that the number of blocks is equal in both KV caches.
+        """
+        num_gpu_blocks, num_cpu_blocks = self.base_worker.determine_num_available_blocks()
+        positive_num_gpu_blocks = 0
+        negative_num_gpu_blocks = 0
+        if self.positive_worker is not None:
+            positive_num_gpu_blocks, positive_num_cpu_blocks = self.positive_worker.determine_num_available_blocks()
+        if self.negative_worker is not None:
+            negative_num_gpu_blocks, negative_num_cpu_blocks = self.negative_worker.determine_num_available_blocks()
+
+        logger.info(f"Num GPU blocks: {num_gpu_blocks}, {positive_num_gpu_blocks}, {negative_num_gpu_blocks}")
+        return max(num_gpu_blocks, positive_num_gpu_blocks, negative_num_gpu_blocks) // 3, num_cpu_blocks
+    
+    def initialize_cache(self, num_gpu_blocks: int,
+                         num_cpu_blocks: int) -> None:
+        """Initialize the cache engine of the scorer and proposer workers.
+        """
+        self.base_worker.initialize_cache(num_gpu_blocks=num_gpu_blocks,
+                                            num_cpu_blocks=num_cpu_blocks)
+        if self.positive_worker is not None:
+            self.positive_worker.initialize_cache(num_gpu_blocks=num_gpu_blocks,
+                                              num_cpu_blocks=num_cpu_blocks)
+        if self.negative_worker is not None:
+            self.negative_worker.initialize_cache(num_gpu_blocks=num_gpu_blocks,
+                                              num_cpu_blocks=num_cpu_blocks)
+    
     @torch.inference_mode()
     def execute_model(
         self, execute_model_req: Optional[ExecuteModelRequest] = None

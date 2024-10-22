@@ -1147,7 +1147,7 @@ class ContrastiveDecodingConfig:
         base_parallel_config: ParallelConfig,
         cd_positive_model: Optional[str],
         cd_negative_model: Optional[str],
-        sampler_alpha: Optional[float],
+        cd_decoding_alpha: Optional[float],
     ) -> Optional["ContrastiveDecodingConfig"]:
         if cd_positive_model is None and cd_negative_model is None:
             """Not specified, so we don't use contrastive decoding."""
@@ -1185,7 +1185,7 @@ class ContrastiveDecodingConfig:
             positive_model_config,
             negative_model_config,
             contrastive_parallel_config,
-            sampler_alpha,
+            cd_decoding_alpha,
         )
     
     def __init__(self,

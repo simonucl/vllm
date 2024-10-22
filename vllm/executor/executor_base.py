@@ -4,7 +4,7 @@ from typing import List, Optional, Set, Tuple
 from vllm.config import (CacheConfig, DeviceConfig, LoadConfig, LoRAConfig,
                          ModelConfig, ObservabilityConfig, ParallelConfig,
                          PromptAdapterConfig, SchedulerConfig,
-                         SpeculativeConfig)
+                         SpeculativeConfig, ContrastiveDecodingConfig)
 from vllm.lora.request import LoRARequest
 from vllm.model_executor.layers.sampler import SamplerOutput
 from vllm.prompt_adapter.request import PromptAdapterRequest
@@ -31,6 +31,7 @@ class ExecutorBase(ABC):
         load_config: LoadConfig,
         lora_config: Optional[LoRAConfig],
         speculative_config: Optional[SpeculativeConfig],
+        contrastive_decoding_config: Optional[ContrastiveDecodingConfig],
         prompt_adapter_config: Optional[PromptAdapterConfig],
         observability_config: Optional[ObservabilityConfig],
     ) -> None:
@@ -42,6 +43,7 @@ class ExecutorBase(ABC):
         self.scheduler_config = scheduler_config
         self.device_config = device_config
         self.speculative_config = speculative_config
+        self.contrastive_decoding_config = contrastive_decoding_config
         self.prompt_adapter_config = prompt_adapter_config
         self.observability_config = observability_config
         self._init_executor()

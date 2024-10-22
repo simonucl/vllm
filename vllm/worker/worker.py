@@ -10,7 +10,7 @@ import vllm.envs as envs
 from vllm.config import (CacheConfig, DeviceConfig, LoadConfig, LoRAConfig,
                          ModelConfig, ObservabilityConfig, ParallelConfig,
                          PromptAdapterConfig, SchedulerConfig,
-                         SpeculativeConfig)
+                         SpeculativeConfig, ContrastiveDecodingConfig)
 from vllm.distributed import (ensure_model_parallel_initialized,
                               init_distributed_environment,
                               set_custom_all_reduce)
@@ -53,6 +53,7 @@ class Worker(LocalOrDistributedWorkerBase):
         distributed_init_method: str,
         lora_config: Optional[LoRAConfig] = None,
         speculative_config: Optional[SpeculativeConfig] = None,
+        contrastive_decoding_config: Optional[ContrastiveDecodingConfig] = None,
         prompt_adapter_config: Optional[PromptAdapterConfig] = None,
         is_driver_worker: bool = False,
         model_runner_cls: Optional[Type[GPUModelRunnerBase]] = None,
@@ -89,7 +90,7 @@ class Worker(LocalOrDistributedWorkerBase):
                 not in ["medusa", "mlp_speculator", "eagle"]) \
                     else {"return_hidden_states": True}
 
-        contrastive_config = {} if speculative_config is None else {"return_logits": True}
+        contrastive_config = {} if contrastive_decoding_config is None else {"return_logits": True}
 
         ModelRunnerClass: Type[GPUModelRunnerBase] = ModelRunner
         if model_runner_cls is not None:

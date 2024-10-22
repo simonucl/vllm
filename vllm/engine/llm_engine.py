@@ -17,7 +17,7 @@ from vllm.config import (CacheConfig, DecodingConfig, DeviceConfig,
                          EngineConfig, LoadConfig, LoRAConfig, ModelConfig,
                          ObservabilityConfig, ParallelConfig,
                          PromptAdapterConfig, SchedulerConfig,
-                         SpeculativeConfig)
+                         SpeculativeConfig, ContrastiveDecodingConfig)
 from vllm.core.scheduler import (ScheduledSequenceGroup, Scheduler,
                                  SchedulerOutputs)
 from vllm.engine.arg_utils import EngineArgs
@@ -225,6 +225,7 @@ class LLMEngine:
         load_config: LoadConfig,
         lora_config: Optional[LoRAConfig],
         speculative_config: Optional[SpeculativeConfig],
+        contrastive_decoding_config: Optional[ContrastiveDecodingConfig],
         decoding_config: Optional[DecodingConfig],
         observability_config: Optional[ObservabilityConfig],
         prompt_adapter_config: Optional[PromptAdapterConfig],
@@ -237,7 +238,7 @@ class LLMEngine:
     ) -> None:
         logger.info(
             "Initializing an LLM engine (v%s) with config: "
-            "model=%r, speculative_config=%r, tokenizer=%r, "
+            "model=%r, speculative_config=%r, cd_config=%r, tokenizer=%r, "
             "skip_tokenizer_init=%s, tokenizer_mode=%s, revision=%s, "
             "override_neuron_config=%s, "
             "rope_scaling=%r, rope_theta=%r, tokenizer_revision=%s, "
@@ -256,6 +257,7 @@ class LLMEngine:
             VLLM_VERSION,
             model_config.model,
             speculative_config,
+            contrastive_decoding_config,
             model_config.tokenizer,
             model_config.skip_tokenizer_init,
             model_config.tokenizer_mode,
@@ -297,6 +299,7 @@ class LLMEngine:
         self.scheduler_config = scheduler_config
         self.device_config = device_config
         self.speculative_config = speculative_config
+        self.contrastive_decoding_config = contrastive_decoding_config
         self.load_config = load_config
         self.decoding_config = decoding_config or DecodingConfig()
         self.prompt_adapter_config = prompt_adapter_config
@@ -340,6 +343,7 @@ class LLMEngine:
             device_config=device_config,
             lora_config=lora_config,
             speculative_config=speculative_config,
+            contrastive_decoding_config=contrastive_decoding_config,
             load_config=load_config,
             prompt_adapter_config=prompt_adapter_config,
             observability_config=self.observability_config,

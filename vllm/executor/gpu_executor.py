@@ -60,6 +60,7 @@ class GPUExecutor(ExecutorBase):
             distributed_init_method=distributed_init_method,
             lora_config=self.lora_config,
             speculative_config=self.speculative_config,
+            contrastive_decoding_config=self.contrastive_decoding_config,
             prompt_adapter_config=self.prompt_adapter_config,
             is_driver_worker=(not self.parallel_config)
             or (rank % self.parallel_config.tensor_parallel_size == 0),
@@ -75,7 +76,7 @@ class GPUExecutor(ExecutorBase):
         elif self.speculative_config:
             worker_module_name = "vllm.spec_decode.spec_decode_worker"
             worker_class_name = "create_spec_worker"
-        elif self.contrastive_config:
+        elif self.contrastive_decoding_config:
             worker_module_name = "vllm.contrast_decode.contrast_decode_worker"
             worker_class_name = "create_contrastive_worker"
         else:

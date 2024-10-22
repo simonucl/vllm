@@ -1033,6 +1033,8 @@ class EngineArgs:
         )
 
         contrastive_decoding_config = ContrastiveDecodingConfig.maybe_create_cd_config(
+            base_model_config=model_config,
+            base_parallel_config=parallel_config,
             cd_positive_model=self.cd_positive_model,
             cd_negative_model=self.cd_negative_model,
             cd_decoding_alpha=self.cd_decoding_alpha,
