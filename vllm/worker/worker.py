@@ -89,6 +89,8 @@ class Worker(LocalOrDistributedWorkerBase):
                 not in ["medusa", "mlp_speculator", "eagle"]) \
                     else {"return_hidden_states": True}
 
+        contrastive_config = {} if speculative_config is None else {"return_logits": True}
+
         ModelRunnerClass: Type[GPUModelRunnerBase] = ModelRunner
         if model_runner_cls is not None:
             ModelRunnerClass = model_runner_cls
@@ -109,6 +111,7 @@ class Worker(LocalOrDistributedWorkerBase):
             prompt_adapter_config=prompt_adapter_config,
             observability_config=observability_config,
             **speculative_args,
+            **contrastive_config,
         )
         # Uninitialized cache engine. Will be initialized by
         # initialize_cache.

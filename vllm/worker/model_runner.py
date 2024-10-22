@@ -955,6 +955,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
         is_driver_worker: bool = False,
         prompt_adapter_config: Optional[PromptAdapterConfig] = None,
         return_hidden_states: bool = False,
+        return_logits: bool = False,
         observability_config: Optional[ObservabilityConfig] = None,
         input_registry: InputRegistry = INPUT_REGISTRY,
         mm_registry: MultiModalRegistry = MULTIMODAL_REGISTRY,
@@ -969,6 +970,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
         self.is_driver_worker = is_driver_worker
         self.prompt_adapter_config = prompt_adapter_config
         self.return_hidden_states = return_hidden_states
+        self.return_logits = return_logits
         self.observability_config = observability_config
 
         self.device = self.device_config.device
@@ -1732,6 +1734,9 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                 hidden_states = hidden_or_intermediate_states
 
             output.hidden_states = hidden_states
+
+        if self.return_logits:
+            output.logits = logits
 
         return [output]
 

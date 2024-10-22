@@ -75,6 +75,9 @@ class GPUExecutor(ExecutorBase):
         elif self.speculative_config:
             worker_module_name = "vllm.spec_decode.spec_decode_worker"
             worker_class_name = "create_spec_worker"
+        elif self.contrastive_config:
+            worker_module_name = "vllm.contrast_decode.contrast_decode_worker"
+            worker_class_name = "create_contrastive_worker"
         else:
             worker_module_name = "vllm.worker.worker"
             worker_class_name = "Worker"

@@ -12,6 +12,7 @@ from vllm.config import (
 )
 from vllm.distributed.communication_op import broadcast_tensor_dict
 from vllm.logger import init_logger
+from vllm.model_executor import SamplingMetadata
 from vllm.model_executor.layers.rejection_sampler import RejectionSampler
 from vllm.model_executor.layers.sampler import SamplerOutput, Sampler
 from vllm.model_executor.layers.spec_decode_base_sampler import (
@@ -29,31 +30,9 @@ from vllm.sequence import (
     SequenceGroupMetadata,
     get_all_seq_ids_and_request_ids,
 )
-from vllm.spec_decode.batch_expansion import BatchExpansionTop1Scorer
-from vllm.spec_decode.draft_model_runner import TP1DraftModelRunner
-from vllm.spec_decode.interfaces import (
-    SpeculativeProposals,
-    SpeculativeScorer,
-    SpeculativeScores,
-)
-from vllm.spec_decode.medusa_worker import MedusaWorker
-from vllm.spec_decode.metrics import AsyncMetricsCollector
-from vllm.spec_decode.mlp_speculator_worker import MLPSpeculatorWorker
-from vllm.spec_decode.mqa_scorer import MQAScorer
 from vllm.spec_decode.multi_step_worker import MultiStepWorker
-from vllm.spec_decode.ngram_worker import NGramWorker
-from vllm.spec_decode.proposer_worker_base import ProposerWorkerBase
-from vllm.spec_decode.smaller_tp_proposer_worker import SmallerTpProposerWorker
-from vllm.spec_decode.target_model_runner import TargetModelRunner
-from vllm.spec_decode.util import (
-    Timer,
-    create_logprobs_output,
-    create_sequence_group_output,
-    get_all_num_logprobs,
-    get_sampled_token_logprobs,
-    nvtx_range,
-    split_batch_by_proposal_len,
-)
+from vllm.contrast_decode.contrast_model_runner import ContrastModelRunner
+
 from vllm.worker.worker import Worker
 from vllm.worker.worker_base import LoraNotSupportedWorkerBase, WorkerBase
 
@@ -69,7 +48,7 @@ def create_contrastive_worker(*args, **kwargs) -> "ContrastiveDecodeWorker":
 
     contrastive_worker_kwargs = kwargs.copy()
 
-    kwargs["model_runner_cls"] = TargetModelRunner
+    kwargs["model_runner_cls"] = ContrastModelRunner
     base_worker = Worker(*args, **kwargs)
 
     contrastive_worker_kwargs.update(
@@ -123,9 +102,9 @@ class ContrastiveDecodeWorker(LoraNotSupportedWorkerBase):
             )
             negative_worker = MultiStepWorker(**negative_worker_kwargs)
 
-        decode_sampler = ContrastiveSampler(
-            alpha=sampler_alpha,
-        )
+        # decode_sampler = ContrastiveSampler(
+        #     alpha=sampler_alpha,
+        # )
 
         return cls(
             base_worker=base_worker,
@@ -133,7 +112,7 @@ class ContrastiveDecodeWorker(LoraNotSupportedWorkerBase):
             positive_worker=positive_worker,
             negative_worker=negative_worker,
             sampler_alpha=sampler_alpha,
-            decode_sampler=decode_sampler,
+            # decode_sampler=decode_sampler,
         )
 
     def __init__(
@@ -142,14 +121,15 @@ class ContrastiveDecodeWorker(LoraNotSupportedWorkerBase):
         worker_kwargs: Dict[str, Any],
         positive_worker: Optional[WorkerBase],
         negative_worker: Optional[WorkerBase],
-        decode_sampler: ContrastiveSamplerBase,
+        sampler_alpha: float,
+        # decode_sampler: ContrastiveSamplerBase,
     ):
         self.base_worker = base_worker
         self.worker_kwargs = worker_kwargs
         self.positive_worker = positive_worker
         self.negative_worker = negative_worker
-        self.decode_sampler = decode_sampler
-
+        # self.decode_sampler = decode_sampler
+        self.sampler_alpha = sampler_alpha
         self.sampler = Sampler()
 
     def init_device(self) -> None:
@@ -204,15 +184,6 @@ class ContrastiveDecodeWorker(LoraNotSupportedWorkerBase):
 
         return self._run_contrastive_decoding(execute_model_req)
 
-    @nvtx_range("contrastive_decode_worker.execute_model")
-    def _execute_model(
-        self, execute_model_req: ExecuteModelRequest
-    ) -> List[SamplerOutput]:
-        """
-        Execute the model for a single step.
-        """
-        pass
-
     def _should_disable_all_contrastive_decoding(
         self, execute_model_req: ExecuteModelRequest
     ) -> bool:
@@ -222,7 +193,6 @@ class ContrastiveDecodeWorker(LoraNotSupportedWorkerBase):
         # TODO: Implement this
         return False
 
-    @nvtx_range("contrastive_decode_worker._run_no_contrastive_decoding")
     def _run_no_contrastive_decoding(
         self, execute_model_req: ExecuteModelRequest
     ) -> List[SamplerOutput]:
@@ -236,9 +206,9 @@ class ContrastiveDecodeWorker(LoraNotSupportedWorkerBase):
         sampler_output.sampled_token_ids = None
         sampler_output.sampled_token_probs = None
         sampler_output.logprobs = None
+        sampler_output.logits = None
         return [sampler_output]
 
-    @nvtx_range("contrastive_decode_worker._run_contrastive_decoding")
     def _run_contrastive_decoding(
         self, execute_model_req: ExecuteModelRequest
     ) -> List[SamplerOutput]:
@@ -246,18 +216,33 @@ class ContrastiveDecodeWorker(LoraNotSupportedWorkerBase):
         Run the model with contrastive decoding.
         """
         base_sampler_output = self.base_worker.execute_model(execute_model_req)
-        assert len(base_sampler_output) == 1
-        base_sampler_output = base_sampler_output[0]
+        if self.positive_worker is not None:
+            positive_sampler_output = self.positive_worker.execute_model(execute_model_req)
+        else:
+            positive_sampler_output = []
+        if self.negative_worker is not None:
+            negative_sampler_output = self.negative_worker.execute_model(execute_model_req)
+        else:
+            negative_sampler_output = []
 
-        positive_sampler_output = self.positive_worker.execute_model(execute_model_req)
-        assert len(positive_sampler_output) == 1
-        positive_sampler_output = positive_sampler_output[0]
+        generators = self.base_worker.model_runner.get_generators(
+            execute_model_req.finished_requests_ids)
+        
+        input_tokens_tensor, seq_lens, query_lens = self._prepare_input_tensors(
+            execute_model_req.seq_group_metadata_list,
+        )
 
-        negative_sampler_output = self.negative_worker.execute_model(execute_model_req)
-        assert len(negative_sampler_output) == 1
-        negative_sampler_output = negative_sampler_output[0]
+        sampling_metadata = SamplingMetadata.prepare(
+            execute_model_req.seq_group_metadata_list,
+            seq_lens,
+            query_lens,
+            self.device,
+            self.base_worker.model_runner.pin_memory,
+            generators,
+        )
 
         contrastive_sampler_output = self._create_contrastive_sampler_output(
+            sampling_metadata,
             base_sampler_output,
             positive_sampler_output,
             negative_sampler_output,
@@ -266,15 +251,62 @@ class ContrastiveDecodeWorker(LoraNotSupportedWorkerBase):
 
     def _create_contrastive_sampler_output(
         self,
-        base_sampler_output: SamplerOutput,
-        positive_sampler_output: SamplerOutput,
-        negative_sampler_output: SamplerOutput,
+        sampling_metadata: SamplingMetadata,
+        base_sampler_output: List[SamplerOutput],
+        positive_sampler_output: List[SamplerOutput],
+        negative_sampler_output: List[SamplerOutput],
     ) -> List[SamplerOutput]:
         """
         Create a contrastive sampler output.
         """
-        
+        # Sample the next token.
+        logits = base_sampler_output[0].logits
+        if self.positive_worker:
+            logits = logits + self.sampler_alpha * positive_sampler_output[0].logits
+        if self.negative_worker:
+            logits = logits - self.sampler_alpha * negative_sampler_output[0].logits
 
+        output: SamplerOutput = self.base_worker.model_runner.model.sample(
+            logits=logits,
+            sampling_metadata=sampling_metadata,
+        )
+        return [output]
+
+    def _prepare_input_tensors(
+        self,
+        seq_group_metadata_list: Optional[List[SequenceGroupMetadata]],
+    ) -> Tuple[torch.Tensor, List[int], List[int]]:
+        if not seq_group_metadata_list:
+            return torch.empty(0, device=self.device), [], []
+
+        input_tokens: List[int] = []
+        seq_lens: List[int] = []
+        query_lens: List[int] = []
+
+        for seq_group_metadata in seq_group_metadata_list:
+            is_prompt = seq_group_metadata.is_prompt
+
+            for seq_data in seq_group_metadata.seq_data.values():
+                seq_data_len = seq_data.get_len()
+                if is_prompt:
+                    context_len = seq_data.get_num_computed_tokens()
+                    seq_len = min(
+                        seq_data_len,
+                        context_len + seq_group_metadata.token_chunk_size)
+                    tokens = seq_data.get_token_ids()[context_len:seq_len]
+                    seq_lens.append(seq_len)
+                    input_tokens.extend(tokens)
+                    query_lens.append(seq_len - context_len)
+                else:
+                    seq_lens.append(seq_data_len)
+                    input_tokens.append(seq_data.get_last_token_id())
+                    query_lens.append(1)
+
+        input_tokens_tensor = torch.tensor(input_tokens,
+                                           dtype=torch.long,
+                                           device=self.device)
+        return input_tokens_tensor, seq_lens, query_lens
+    
     @cached_property
     def vocab_size(self) -> int:
         return self.base_worker.vocab_size

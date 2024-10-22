@@ -1143,27 +1143,61 @@ class ContrastiveDecodingConfig:
 
     @staticmethod
     def maybe_create_cd_config(
+        base_model_config: ModelConfig,
+        base_parallel_config: ParallelConfig,
         cd_positive_model: Optional[str],
         cd_negative_model: Optional[str],
-        cd_decoding_alpha: Optional[float],
+        sampler_alpha: Optional[float],
     ) -> Optional["ContrastiveDecodingConfig"]:
         if cd_positive_model is None and cd_negative_model is None:
+            """Not specified, so we don't use contrastive decoding."""
             return None
+        
+        positive_model_config = None
+        negative_model_config = None
+        if cd_positive_model is not None:
+            positive_model_config = ModelConfig(
+                model=cd_positive_model,
+                task="generate",
+                tokenizer=base_model_config.tokenizer,
+                tokenizer_mode=base_model_config.tokenizer_mode,
+                trust_remote_code=base_model_config.trust_remote_code,
+                dtype=base_model_config.dtype,
+                seed=base_model_config.seed,
+                # TODO: revisit
+            )
+        if cd_negative_model is not None:
+            negative_model_config = ModelConfig(
+                model=cd_negative_model,
+                task="generate",
+                tokenizer=base_model_config.tokenizer,
+                tokenizer_mode=base_model_config.tokenizer_mode,
+                trust_remote_code=base_model_config.trust_remote_code,
+                dtype=base_model_config.dtype,
+                seed=base_model_config.seed,
+                # TODO: revisit
+            )
+
+        # TODO modify parallel config for contrastive decoding
+        contrastive_parallel_config = base_parallel_config
 
         return ContrastiveDecodingConfig(
-            cd_positive_model,
-            cd_negative_model,
-            cd_decoding_alpha,
+            positive_model_config,
+            negative_model_config,
+            contrastive_parallel_config,
+            sampler_alpha,
         )
     
     def __init__(self,
-                 cd_positive_model: str,
-                 cd_negative_model: str,
-                 cd_decoding_alpha: float,
+                 positive_model_config: Optional[ModelConfig],
+                 negative_model_config: Optional[ModelConfig],
+                 parallel_config: ParallelConfig,
+                 sampler_alpha: float,
                  ) -> None:
-        self.cd_positive_model = cd_positive_model
-        self.cd_negative_model = cd_negative_model
-        self.cd_decoding_alpha = cd_decoding_alpha
+        self.positive_model_config = positive_model_config
+        self.negative_model_config = negative_model_config
+        self.parallel_config = parallel_config
+        self.sampler_alpha = sampler_alpha
 
 class SpeculativeConfig:
     """Configuration for speculative decoding.

@@ -117,6 +117,9 @@ class SamplerOutput(
     # block/sync across workers, cpu-gpu sync time and sampling time.
     model_execute_time: Optional[float] = None
 
+    # Optional logits from the model.
+    logits: Optional[torch.Tensor] = None
+
     def __getitem__(self, idx: int) -> CompletionSequenceGroupOutput:
         return self.outputs[idx]
 
